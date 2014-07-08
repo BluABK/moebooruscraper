@@ -6,8 +6,7 @@ $default_ua = "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:14.0) Gecko/20100101 Firef
 $ch = false;
 
 $parsers = array();
-include "parsers/moebooru.php";
-
+require "parsers/moebooru.php";
 
 // Prereq section - we need cURL extension
 if(!function_exists("curl_init")){
@@ -56,7 +55,6 @@ foreach($argv as $arg){
 				default:
 					echo "Unknown option: $opt\n";
 					die();
-			
 			}
 		}
 	}
@@ -71,9 +69,13 @@ if(count($urls)<1)
 	help();
 
 foreach($urls as $url){
-	$url = fix($url);
-	$parser = choose_parser($url);
-	$parser->scrape($url, $options);
+	$url2 = fix($url);
+	$parser = choose_parser($url2);
+	if($parser === NULL){
+		echo "Cannot get a parser for $url\n";
+		continue;
+	}
+	$parser->scrape($url2, $options);
 }
 curl_close($ch);
 
@@ -84,15 +86,23 @@ function url2hr($url2){
 function choose_parser($url){
 	echo "Fetching frontpage: ";
 	global $parsers;
-	$site = $url['site'];
-	$proto = $url['proto'];
-	$frontpage = curl_get($proto."://".$site);
-	$parser = null;
-	foreach($parsers as $parser){
-		if($parser->ismine_frontpage($frontpage)) break;
+
+	$url2 = $url['proto']."://".$url['site'].$url['location'];
+
+	$frontpage = curl_get($url2);
+	if(trim($frontpage) == ""){
+		echo "Server returned an empty document for url $url2\n";
+		return null;
 	}
-	if($parser== null || !$parser->ismine_frontpage($frontpage)){
-		echo "No parser :(\n";
+	$parser = null;
+	foreach($parsers as $p){
+		if($p->ismine_frontpage($frontpage))
+			$parser = $p;
+	}
+	if($parser === null){
+		$txt = array();
+		foreach($parsers as $p) $txt[] = $p->name;
+		echo "No parser :( Check the ismine_frontpage of your parser. Loaded parsers: ".implode(", ", $txt).".\n";
 		return null;
 	}
 	echo "Chose ".$parser->name."\n";
@@ -146,7 +156,13 @@ function help(){
 function curl_get($url){
 	global $options;
 	global $ch;
-	if(!$ch) $ch = curl_init();
+	if(!$ch){
+		$ch = curl_init();
+		echo "WARNING: Curl ignores ssl errors!\n";
+	}
+	// Remove me when we figure out why it breaks
+	curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+
 	curl_setopt($ch, CURLOPT_URL, $url);
 	curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
 	curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
